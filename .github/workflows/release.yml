@@ -1,24 +1,19 @@
 # ---------------------------------------------------------------------------
 #  RELEASE - porta online la bacheca.
-#
-#  Questo file e' INCOMPLETO: dove trovi  # TODO n  devi scrivere tu.
-#  Il job "collaudo" e' gia' completo e il job "build" e' quasi tutto scritto:
-#  leggili prima di mettere mano al resto, ti servono da modello.
-#
-#  Il principio che questo file deve rispettare:
-#  l'artefatto si costruisce UNA volta e si promuove. Chi va in produzione
-#  SCARICA quell'artefatto, non ne costruisce un altro.
 # ---------------------------------------------------------------------------
-name: Release
 
+name: Release
 on:
   push:
     branches: [main]
 
-  # TODO 6 - Aggiungi la partenza a mano (workflow_dispatch) con un input
-  #          chiamato  versione_da_ripubblicare : lo SHA corto di una build
-  #          gia' collaudata. Non obbligatorio, default stringa vuota.
-  #          Questo input e' il tuo pulsante di ROLLBACK.
+  # TODO 6 - Aggiungi la partenza a mano (workflow_dispatch) con rollback
+  workflow_dispatch:
+    inputs:
+      versione_da_ripubblicare:
+        description: 'SHA corto del commit da ripubblicare (Rollback)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -38,25 +33,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # tutta la storia del repository: senza, non potresti tornare indietro
           fetch-depth: 0
 
-      # TODO 7 - Se l'operatore ha indicato una versione da ripubblicare, qui il
-      #          repository deve tornare a QUELLO commit prima di costruire.
-      #          Serve uno step che:
-      #            - parte solo quando il workflow e' stato lanciato a mano E
-      #              l'input del TODO 6 non e' vuoto (usa  if: )
-      #            - esegue  git checkout  sullo SHA indicato
-      #          ATTENZIONE: non provare a passare lo SHA come  ref:  del checkout
-      #          qui sopra: actions/checkout cerca quel valore fra i nomi di branch
-      #          e di tag, non lo trova, e il job muore.
+      # TODO 7 - Rollback se è stata indicata una versione
+      - name: Rollback al commit selezionato
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.versione_da_ripubblicare != '' }}
+        run: git checkout ${{ inputs.versione_da_ripubblicare }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Prima si decide QUALE versione si sta costruendo, poi si costruisce:
-      # cosi anche in caso di rollback l'etichetta nella pagina e quella giusta.
       - name: Calcola l'etichetta di versione
         id: versione
         run: |
@@ -75,7 +62,7 @@ jobs:
           path: dist/
           retention-days: 30
 
-  # -------------------------------------------------- 2. collauda l'artefatto (GIA' FATTO)
+  # -------------------------------------------------- 2. collauda l'artefatto
   collaudo:
     name: Collaudo sull'artefatto, non sul codice
     needs: build
@@ -93,24 +80,34 @@ jobs:
           grep -q "Bacheca avvisi" dist/index.html || { echo "titolo non trovato"; exit 1; }
           echo "artefatto collaudato"
 
-  # -------------------------------------------------- 3. l'umano nel mezzo
+  # -------------------------------------------------- 3. l'umano nel mezzo (TODO 8)
   approvazione:
-    needs: [ build, collaudo ]  # o il nome del job precedente
+    name: Approvazione umana prima della produzione
+    needs: [ build, collaudo ]
     runs-on: ubuntu-latest
-    environment: produzione    # <--- QUESTO blocca il job e attiva l'approvazione manuale
+    environment: produzione
     steps:
-      - name: Approvato
-        run: echo "Release approvata!"
-  # -------------------------------------------------- 4. pubblica
- pubblica:
-  needs: [ build, approvazione ]  # <--- FONDAMENTALE: parte SOLO dopo l'approvazione
-  permissions:
-    contents: write
-  runs-on: ubuntu-latest
-  steps:
-    - name: Scarica l'artefatto
-      uses: actions/download-artifact@v4
-      with:
-        name: sito
-        path: sito
-    # ... eventuali altri step di pubblicazione ...
+      - name: Approvata la release
+        run: echo "Approvata la release da parte dell'operatore!"
+
+  # -------------------------------------------------- 4. pubblica (TODO 9 e 10)
+  pubblica:
+    name: Pubblica sul branch gh-pages
+    needs: [ build, approvazione ]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scarica l'artefatto
+        uses: actions/download-artifact@v4
+        with:
+          name: sito
+          path: sito
+
+      - name: Deploy su GitHub Pages / Branch gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./sito
