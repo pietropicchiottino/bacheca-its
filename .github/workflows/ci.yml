@@ -77,7 +77,9 @@ jobs:
       - name: Smoke test build artifact
         run: |
               test -s dist/index.html
-              [ $(grep -c 'class="avviso"' dist/index.html) -eq $(jq '. | length' data/avvisi.json) ]
+              attesi=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/avvisi.json','utf8')).avvisi.length)")
+              trovati=$(grep -c '<td class="cod">' dist/index.html || true)
+              [ "$trovati" -eq "$attesi" ]
       - name: Upload site artifact
         uses: actions/upload-artifact@v4
         with:
