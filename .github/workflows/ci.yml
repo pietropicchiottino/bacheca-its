@@ -12,6 +12,10 @@ name: CI
 # TODO 1 - Fai partire questo workflow su OGNI pull request verso main,
 #          e anche sui push diretti a main.
 on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -46,6 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check secrets
+        run: bash script/sniffa-segreti.sh
 
       # TODO 2 - Aggiungi lo step che esegue lo script script/sniffa-segreti.sh
       #          sulla cartella corrente. Lo script esce con 1 se trova un segreto:
@@ -60,8 +66,25 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-
+            node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      
+      - name: Build site
+        run: npm run build
+      - name: Smoke test build artifact
+        run: |
+              test -s dist/index.html
+              attesi=$(node -e "console.log(JSON.parse(require('fs').readFileSync('data/avvisi.json','utf8')).avvisi.length)")
+              trovati=$(grep -c '<td class="cod">' dist/index.html || true)
+              [ "$trovati" -eq "$attesi" ]
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sito
+          path: dist/
       # TODO 3 - Tre step, in quest'ordine:
       #          a) installa ESATTAMENTE le dipendenze dichiarate nel lockfile
       #             (non "npm install": il comando che rispetta il lockfile)
